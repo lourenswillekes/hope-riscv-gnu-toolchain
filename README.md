@@ -1,3 +1,30 @@
+Draper Dover Project Mirror of riscv/riscv-gnu-toolchain
+========================================================
+
+A mirror of https://github.com/riscv/riscv-gnu-toolchain
+
+## dover branch : adding tags and pump to riscv.
+
+Note that the `dover` branch is the default branch, so when you clone
+the repo, `dover` is the default tracking branch.
+
+If you want to checkout and track another branch that currently exists
+on github, say, `foo`, you would do
+
+```
+git checkout --track origin/foo
+```
+
+## updating the mirror with updates from upstream repo
+
+```
+git remote add upstream https://github.com/riscv/riscv-gnu-toolchain.git
+git fetch upstream
+```
+
+and then merge into, e.g., `dover` branch.
+
+
 RISC-V GNU Compiler Toolchain
 =============================
 
