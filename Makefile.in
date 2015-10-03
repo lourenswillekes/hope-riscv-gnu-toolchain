@@ -186,7 +186,7 @@ stamps/build-gcc-linux-stage2: src/gcc stamps/build-glibc-linux$(XLEN) \
 		--with-sysroot=$(SYSROOT) \
 		--enable-shared \
 		--enable-tls \
-		--enable-languages=c,c++,fortran \
+		--enable-languages=c,c++ \
 		--disable-libmudflap \
 		--disable-libssp \
 		--disable-libquadmath \
