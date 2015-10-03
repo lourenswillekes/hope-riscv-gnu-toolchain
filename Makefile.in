@@ -59,6 +59,7 @@ linux:
 		CC="riscv64-unknown-linux-gnu-gcc -m32" \
 		READELF=riscv64-unknown-linux-gnu-readelf \
 		CFLAGS_FOR_TARGET_EXTRA="-m32" \
+		CXXFLAGS_FOR_TARGET_EXTRA="-m32" \
 		ASFLAGS_FOR_TARGET_EXTRA="-m32"
 	$(MAKE) stamps/build-gcc-linux-stage2 XLEN=64
 endif
@@ -124,6 +125,7 @@ stamps/build-glibc-linux$(XLEN): src/glibc stamps/build-gcc-linux-stage1
 	mkdir $(notdir $@)
 	mkdir -p $(SYSROOT)/usr/lib $(SYSROOT)/lib
 	cd $(notdir $@) && CFLAGS="$(CFLAGS_FOR_TARGET) -g -O2" \
+		CXXFLAGS="$(CFLAGS_FOR_TARGET) -g -O2" \
 		ASFLAGS="$(ASFLAGS_FOR_TARGET)" \
 		$(CURDIR)/$</configure \
 		--host=riscv$(XLEN)-unknown-linux-gnu \
@@ -143,7 +145,10 @@ stamps/build-gcc-linux-stage1: src/gcc stamps/build-binutils-linux \
                                stamps/build-linux-headers
 	rm -rf $@ $(notdir $@)
 	mkdir $(notdir $@)
-	cd $(notdir $@) && $(CURDIR)/$</configure \
+	cd $(notdir $@) && CFLAGS_FOR_TARGET="$(CFLAGS_FOR_TARGET) -g -O2" \
+		CXXFLAGS_FOR_TARGET="$(CFLAGS_FOR_TARGET) -g -O2" \
+		ASFLAGS_FOR_TARGET="$(ASFLAGS_FOR_TARGET)" \
+		$(CURDIR)/$</configure \
 		--target=riscv$(XLEN)-unknown-linux-gnu \
 		--prefix=$(INSTALL_DIR) \
 		--with-sysroot=$(SYSROOT) \
@@ -172,7 +177,10 @@ stamps/build-gcc-linux-stage2: src/gcc stamps/build-glibc-linux$(XLEN) \
                                stamps/build-glibc-linux-headers
 	rm -rf $@ $(notdir $@)
 	mkdir $(notdir $@)
-	cd $(notdir $@) && $(CURDIR)/$</configure \
+	cd $(notdir $@) && CFLAGS_FOR_TARGET="$(CFLAGS_FOR_TARGET) -g -O2" \
+		CXXFLAGS_FOR_TARGET="$(CFLAGS_FOR_TARGET) -g -O2" \
+		ASFLAGS_FOR_TARGET="$(ASFLAGS_FOR_TARGET)" \
+		$(CURDIR)/$</configure \
 		--target=riscv$(XLEN)-unknown-linux-gnu \
 		--prefix=$(INSTALL_DIR) \
 		--with-sysroot=$(SYSROOT) \
