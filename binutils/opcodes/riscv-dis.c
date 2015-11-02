@@ -160,13 +160,11 @@ print_insn_args (const char *d, insn_t l, bfd_vma pc, disassemble_info *info)
 		     riscv_gpr_names[EXTRACT_OPERAND (CRS2S, l) + 8]);
 	      break;
 	    case 'U': /* RS1, constrained to equal RD */
-	    case 'D': /* RS1 or RD, nonzero */
 	      print (info->stream, "%s", riscv_gpr_names[rd]);
 	      break;
 	    case 'c': /* RS1, constrained to equal sp */
 	      print (info->stream, "%s", riscv_gpr_names[X_SP]);
 	      break;
-	    case 'T': /* RS2, nonzero */
 	    case 'V': /* RS2 */
 	      print (info->stream, "%s",
 		     riscv_gpr_names[EXTRACT_OPERAND (CRS2, l)]);
@@ -219,22 +217,13 @@ print_insn_args (const char *d, insn_t l, bfd_vma pc, disassemble_info *info)
 	    case '<':
 	      print (info->stream, "0x%x", (int) EXTRACT_RVC_IMM (l) & 0x1f);
 	      break;
-	    }
-	  break;
-
-	case 'F': /* RVC floating-point */
-	  switch (*++d)
-	    {
-	    case 't': /* RS2 x8-x15 */
+	    case 'T': /* floating-point RS2 */
 	      print (info->stream, "%s",
-		     riscv_gpr_names[EXTRACT_OPERAND (CRS2S, l) + 8]);
+		     riscv_fpr_names[EXTRACT_OPERAND (CRS2, l)]);
 	      break;
-	    case 'D': /* RD */
-	      print (info->stream, "%s", riscv_gpr_names[rd]);
-	      break;
-	    case 'V': /* RS2 */
+	    case 'D': /* floating-point RS2 x8-x15 */
 	      print (info->stream, "%s",
-		     riscv_gpr_names[EXTRACT_OPERAND (CRS2, l)]);
+		     riscv_fpr_names[EXTRACT_OPERAND (CRS2S, l) + 8]);
 	      break;
 	    }
 	  break;
@@ -311,6 +300,8 @@ print_insn_args (const char *d, insn_t l, bfd_vma pc, disassemble_info *info)
 	    pd->hi_addr[rd] = pc + EXTRACT_UTYPE_IMM (l);
 	  else if ((l & MASK_LUI) == MATCH_LUI)
 	    pd->hi_addr[rd] = EXTRACT_UTYPE_IMM (l);
+	  else if ((l & MASK_C_LUI) == MATCH_C_LUI)
+	    pd->hi_addr[rd] = EXTRACT_RVC_LUI_IMM (l);
 	  print (info->stream, "%s", riscv_gpr_names[rd]);
 	  break;
 
