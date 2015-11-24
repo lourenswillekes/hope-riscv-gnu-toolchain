@@ -54,7 +54,17 @@ along with GCC; see the file COPYING3.  If not see
 %{!shared: \
   %{profile:-lc_p} %{!profile:-lc}}"
 
+#undef STARTFILE_SPEC
+#define STARTFILE_SPEC \
+  "%{" OPT_ARCH64 ": \
+     %{!shared: %{pg|p|profile:gcrt1.o%s;pie:Scrt1.o%s;:crt1.o%s}} \
+     crti.o%s %{static:crtbeginT.o%s;shared|pie:crtbeginS.o%s;:crtbegin.o%s} } \
+  %{" OPT_ARCH32 ": \
+     %{!shared: %{pg|p|profile:gcrt1.o%s;pie:Scrt1.o%s;:crt1.o%s}} \
+     crti.o%s %{static:32/crtbeginT.o%s;shared|pie:32/crtbeginS.o%s;:32/crtbegin.o%s} }"
+
 /* Similar to standard Linux, but adding -ffast-math support.  */
 #undef  ENDFILE_SPEC
 #define ENDFILE_SPEC \
-   "%{shared|pie:crtendS.o%s;:crtend.o%s} crtn.o%s"
+   "%{" OPT_ARCH64 ":%{shared|pie:crtendS.o%s;:crtend.o%s} crtn.o%s} \
+     %{" OPT_ARCH32 ":%{shared|pie:32/crtendS.o%s;:32/crtend.o%s} 32/crtn.o%s}"
