@@ -146,6 +146,322 @@
    s390-*-*)
      conftest_s='
  	.section ".tdata","awT",@progbits
+--- original-gcc/gcc/final.c
++++ gcc/gcc/final.c
+@@ -232,6 +232,39 @@
+ /* True if profile_function should be called, but hasn't been called yet.  */
+ static bool need_profile_function;
+ 
++#define CFI_3TAG_IS_SOURCE 0x1
++#define CFI_3TAG_IS_TARGET 0x2
++#define CFI_3TAG_IS_FUNCTION_START 0x4
++#define CFI_3TAG_IS_FUNCTION_END 0x8
++
++int cfi_3tag_label_counter = 0;
++class cfi_3tag_info_t {
++ public:
++  unsigned flags;
++  int labelno;
++  void render(FILE *stream) {
++    //    char *const buf = (char *) alloca (40 + strlen (prefix));
++    if (isTarget() && isSource())
++      fprintf(stream, ".Lcfi3t_both_");
++    else if (isTarget())
++      fprintf(stream, ".Lcfi3t_tgt_");
++    else if (isFunctionStart())
++      fprintf(stream, ".Lcfi3t_fn_start");
++    else if (isFunctionEnd())
++      fprintf(stream, ".Lcfi3t_fn_end");
++    else
++      fprintf(stream, ".Lcfi3t_src_");
++    fprintf(stream, "%d", labelno);
++  }
++ private:
++  bool isTarget() { return flags & CFI_3TAG_IS_TARGET; }
++  bool isSource() { return flags & CFI_3TAG_IS_SOURCE; }
++  bool isFunctionStart() { return flags & CFI_3TAG_IS_FUNCTION_START; }
++  bool isFunctionEnd() { return flags & CFI_3TAG_IS_FUNCTION_END; }
++};
++
++static vec<cfi_3tag_info_t> cfi_3tag_meta_data;
++
+ static int asm_insn_count (rtx);
+ static void profile_function (FILE *);
+ static void profile_after_prologue (FILE *);
+@@ -1777,6 +1810,114 @@
+   return 0;
+ }
+ 
++//static long cfi_3tag_source_counter = 0;
++static void
++cfi_3tag_mark_source_instruction(FILE *stream, int is_target)
++{
++#if 0
++  const char *prefix = ".cfi_source_";
++  char *const buf = (char *) alloca (40 + strlen (prefix));
++  switch_to_section (text_meta_data_section);
++  fprintf(stream, "\t .dword %d\n", is_target ? CFI_3TAG_IS_SOURCE | CFI_3TAG_IS_TARGET : CFI_3TAG_IS_SOURCE);
++  //  sprintf(buf, "%s%ld", prefix, cfi_3tag_source_counter++);
++  sprintf(buf, "%s%ld", prefix, cfi_3tag_label_counter++);
++  fprintf(stream, "\t .dword %s\n", buf);
++  switch_to_section (current_function_section ());
++  fprintf(stream, "%s:\n", buf);
++#endif
++  cfi_3tag_info_t info;
++  info.flags = is_target ? CFI_3TAG_IS_SOURCE | CFI_3TAG_IS_TARGET : CFI_3TAG_IS_SOURCE;
++  info.labelno = cfi_3tag_label_counter++;
++  info.render(stream);
++  fprintf(stream, ":\n");
++  cfi_3tag_meta_data.safe_push(info);
++}
++
++//static long cfi_3tag_target_counter = 0;
++static void
++cfi_3tag_mark_target_instruction(FILE *stream)
++{
++#if 0
++  const char *prefix = ".cfi_target_";
++  char *const buf = (char *) alloca (40 + strlen (prefix));
++  switch_to_section (text_meta_data_section);
++  fprintf(stream, "\t .dword %d\n", CFI_3TAG_IS_TARGET);
++  //  sprintf(buf, "%s%ld", prefix, cfi_3tag_target_counter++);
++  sprintf(buf, "%s%ld", prefix, cfi_3tag_label_counter++);
++  fprintf(stream, "\t .dword %s\n", buf);
++  switch_to_section (current_function_section ());
++  fprintf(stream, "%s:\n", buf);
++#endif
++  cfi_3tag_info_t info;
++
++  info.flags = CFI_3TAG_IS_TARGET;
++  info.labelno = cfi_3tag_label_counter++;
++  info.render(stream);
++  fprintf(stream, ":\n");
++  cfi_3tag_meta_data.safe_push(info);
++}
++
++static void
++cfi_3tag_mark_function_start(FILE *stream)
++{
++  cfi_3tag_info_t info;
++
++  info.flags = CFI_3TAG_IS_FUNCTION_START;
++  info.labelno = cfi_3tag_label_counter++;
++  info.render(stream);
++  fprintf(stream, ":\n");
++  cfi_3tag_meta_data.safe_push(info);
++}
++
++static void
++cfi_3tag_mark_function_end(FILE *stream)
++{
++  cfi_3tag_info_t info;
++
++  info.flags = CFI_3TAG_IS_FUNCTION_END;
++  info.labelno = cfi_3tag_label_counter++;
++  info.render(stream);
++  fprintf(stream, ":\n");
++  cfi_3tag_meta_data.safe_push(info);
++}
++
++static int next_insn_is_target = 0;
++static void
++cfi_3tag_internal_label(FILE *stream, const char *prefix, long labelno)
++{
++#if 0
++  char *const buf = (char *) alloca (40 + strlen (prefix));
++  switch_to_section (text_meta_data_section);
++  //	ASM_OUTPUT_LABEL_REF(
++  //  ASM_GENERATE_INTERNAL_LABEL (buf, prefix, labelno);
++  fprintf(stream, "\t .dword %d\n", CFI_3TAG_IS_TARGET); // this is a valid target instruction
++  sprintf(buf, ".%s%ld", prefix, labelno);
++  fprintf(stream, "\t .dword %s\n", buf);
++	  //  ASM_OUTPUT_DEBUG_LABEL(stream, prefix, labelno);
++  //  ASM_OUTPUT_LABEL_REF (stream, buf);
++  switch_to_section (current_function_section ());
++#endif
++  cfi_3tag_mark_target_instruction(stream);
++  next_insn_is_target = 0;
++}
++
++static void
++flush_dover_meta_data(FILE *stream)
++{
++  unsigned ix;
++  cfi_3tag_info_t *info;
++
++  switch_to_section (text_meta_data_section);
++  FOR_EACH_VEC_ELT(cfi_3tag_meta_data, ix, info)
++  {
++    fprintf(stream, "\t .dword %d\n", info->flags);
++    fprintf(stream, "\t .dword ");
++    info->render(stream);
++    fprintf(stream, "\n");
++  }
++  switch_to_section (current_function_section ());
++}
++
+ /* Output assembler code for the start of a function,
+    and initialize some of the variables in this file
+    for the new function.  The label for the function and associated
+@@ -1803,9 +1944,18 @@
+ 
+   high_block_linenum = high_function_linenum = last_linenum;
+ 
++  cfi_3tag_meta_data.create(0);
++  
+   if (flag_sanitize & SANITIZE_ADDRESS)
+     asan_function_start ();
+ 
++  // dover cfi hacking! need compiler generated code files to align on word boundaries
++  // fix this better - don't need this on a per function basis, really.
++  // alternatively, CFI 3 lab needs to be able to have better granularity with respect to
++  // dealing with ASM functions.
++  //  ASM_OUTPUT_ALIGN(file, 3);
++  //  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx   aaagh!
++
+   if (!DECL_IGNORED_P (current_function_decl))
+     debug_hooks->begin_prologue (last_linenum, last_filename);
+ 
+@@ -1817,6 +1967,9 @@
+     leaf_renumber_regs (first);
+ #endif
+ 
++  next_insn_is_target = 0;
++  cfi_3tag_mark_function_start(file);
++
+   /* The Sun386i and perhaps other machines don't work right
+      if the profiling code comes after the prologue.  */
+   if (targetm.profile_before_prologue () && crtl->profile)
+@@ -1964,6 +2117,10 @@
+     dwarf2out_end_epilogue (last_linenum, last_filename);
+ 
+   some_local_dynamic_name = 0;
++  cfi_3tag_mark_function_end(asm_out_file);
++  ASM_OUTPUT_ALIGN(asm_out_file, 3);
++  flush_dover_meta_data(asm_out_file);
++  cfi_3tag_meta_data.release();
+ }
+ 
+ 
+@@ -2031,6 +2188,9 @@
+ 
+   last_ignored_compare = 0;
+ 
++  //  printf("creating meta data\n");
++  //  cfi_3tag_meta_data.create(0);
++
+ #ifdef HAVE_cc0
+   for (insn = first; insn; insn = NEXT_INSN (insn))
+     {
+@@ -2089,6 +2249,14 @@
+       insn = final_scan_insn (insn, file, optimize_p, 0, &seen);
+     }
+ 
++#if 0
++  {
++      int align = MIN (BIGGEST_ALIGNMENT, LONG_TYPE_SIZE);
++      switch_to_section (text_meta_data_section);
++      assemble_integer (const0_rtx, LONG_TYPE_SIZE / BITS_PER_UNIT, align, 1);
++  }
++#endif
++
+   if (flag_debug_asm)
+     {
+       free (start_to_bb);
+@@ -2445,6 +2613,17 @@
+       if (!DECL_IGNORED_P (current_function_decl) && LABEL_NAME (insn))
+ 	debug_hooks->label (as_a <rtx_code_label *> (insn));
+ 
++#if 0
++      {
++	printf("here's a label: %s\n", LABEL_NAME(insn));
++	switch_to_section (text_meta_data_section);
++	//	ASM_OUTPUT_LABEL_REF(
++		fprintf(file, "dd %s\n", LABEL_NAME(insn));
++	switch_to_section (current_function_section ());
++	//	assemble_integer (const0_rtx, LONG_TYPE_SIZE / BITS_PER_UNIT, align, 1);
++      }
++#endif
++
+       app_disable ();
+ 
+       next = next_nonnote_insn (insn);
+@@ -2478,16 +2657,22 @@
+ #ifdef ASM_OUTPUT_CASE_LABEL
+ 	  ASM_OUTPUT_CASE_LABEL (file, "L", CODE_LABEL_NUMBER (insn),
+ 				 next);
++	  cfi_3tag_internal_label(file, "L", CODE_LABEL_NUMBER(insn));
+ #else
+ 	  targetm.asm_out.internal_label (file, "L", CODE_LABEL_NUMBER (insn));
+ #endif
+ #endif
+ 	  break;
+ 	}
+-      if (LABEL_ALT_ENTRY_P (insn))
++      if (LABEL_ALT_ENTRY_P (insn)) {
++	//	printf("alt entry\n");
+ 	output_alternate_entry_point (file, insn);
++      }
+       else
+-	targetm.asm_out.internal_label (file, "L", CODE_LABEL_NUMBER (insn));
++	{
++	  cfi_3tag_internal_label(file, "L", CODE_LABEL_NUMBER(insn));
++	  targetm.asm_out.internal_label (file, "L", CODE_LABEL_NUMBER (insn));
++        }
+       break;
+ 
+     default:
+@@ -2979,11 +3164,20 @@
+ 
+ 	NOTICE_UPDATE_CC (body, insn);
+ #endif
++	if (JUMP_P(insn) || CALL_P(insn)) {
++	  cfi_3tag_mark_source_instruction(file, next_insn_is_target);
++	  next_insn_is_target = 1;
++	} else if (next_insn_is_target) {
++	  cfi_3tag_mark_target_instruction(file);
++	  next_insn_is_target = 0;
++	}
+ 
+ 	current_output_insn = debug_insn = insn;
+ 
+ 	/* Find the proper template for this insn.  */
+ 	templ = get_insn_template (insn_code_number, insn);
++	//	if (templ)
++	//	  printf("templ = '%s'\n", templ);
+ 
+ 	/* If the C code returns 0, it means that it is a jump insn
+ 	   which follows a deleted test insn, and that test insn
+--- original-gcc/gcc/output.h
++++ gcc/gcc/output.h
+@@ -506,6 +506,7 @@
+ struct object_block;
+ 
+ /* Special well-known sections.  */
++extern GTY(()) section *text_meta_data_section;
+ extern GTY(()) section *text_section;
+ extern GTY(()) section *data_section;
+ extern GTY(()) section *readonly_data_section;
+--- original-gcc/gcc/varasm.c
++++ gcc/gcc/varasm.c
+@@ -150,6 +150,7 @@
+ static void mark_weak (tree);
+ static void output_constant_pool (const char *, tree);
+ 
++section *text_meta_data_section;
+ /* Well-known sections, each one associated with some sort of *_ASM_OP.  */
+ section *text_section;
+ section *data_section;
+@@ -6101,6 +6102,9 @@
+ 					       emit_bss);
+ #endif
+ 
++  text_meta_data_section = get_unnamed_section (0, output_section_asm_op,
++					       "\t.section\t.text_metadata, \"a\"");
++
+   targetm.asm_out.init_sections ();
+ 
+   if (readonly_data_section == NULL)
 --- original-gcc/gcc/testsuite/gcc.c-torture/execute/20101011-1.c
 +++ gcc/gcc/testsuite/gcc.c-torture/execute/20101011-1.c
 @@ -6,6 +6,9 @@
