@@ -3460,6 +3460,8 @@ static void
 riscv_restore_reg (rtx reg, rtx mem)
 {
   riscv_emit_save_slot_move (reg, mem, RISCV_EPILOGUE_TEMP (GET_MODE (reg)));
+  // and write it back so that any tags on the stack will be cleared
+  riscv_emit_save_slot_move (mem, reg, RISCV_EPILOGUE_TEMP (GET_MODE (reg)));
 }
 
 /* Expand an "epilogue" or "sibcall_epilogue" pattern; SIBCALL_P

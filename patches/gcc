@@ -148,7 +148,7 @@
  	.section ".tdata","awT",@progbits
 --- original-gcc/gcc/final.c
 +++ gcc/gcc/final.c
-@@ -232,6 +232,39 @@
+@@ -232,6 +232,45 @@
  /* True if profile_function should be called, but hasn't been called yet.  */
  static bool need_profile_function;
  
@@ -156,6 +156,8 @@
 +#define CFI_3TAG_IS_TARGET 0x2
 +#define CFI_3TAG_IS_FUNCTION_START 0x4
 +#define CFI_3TAG_IS_FUNCTION_END 0x8
++#define STACK_POLICY_PROLOGUE_END 0x10
++#define STACK_POLICY_EPILOGUE_START 0x11
 +
 +int cfi_3tag_label_counter = 0;
 +class cfi_3tag_info_t {
@@ -172,6 +174,10 @@
 +      fprintf(stream, ".Lcfi3t_fn_start");
 +    else if (isFunctionEnd())
 +      fprintf(stream, ".Lcfi3t_fn_end");
++    else if (flags == STACK_POLICY_PROLOGUE_END)
++      fprintf(stream, ".Lstack_policy_prologue_end_");
++    else if (flags == STACK_POLICY_EPILOGUE_START)
++      fprintf(stream, ".Lstack_policy_epilogue_start_");
 +    else
 +      fprintf(stream, ".Lcfi3t_src_");
 +    fprintf(stream, "%d", labelno);
@@ -188,7 +194,7 @@
  static int asm_insn_count (rtx);
  static void profile_function (FILE *);
  static void profile_after_prologue (FILE *);
-@@ -1777,6 +1810,114 @@
+@@ -1777,6 +1816,200 @@
    return 0;
  }
  
@@ -219,6 +225,30 @@
 +  cfi_3tag_meta_data.safe_push(info);
 +  //  info.render(stdout);
 +  //  printf("\n");
++}
++
++static void
++stack_policy_mark_end_prologue(FILE *stream)
++{
++  cfi_3tag_info_t info;
++
++  info.flags = STACK_POLICY_PROLOGUE_END;
++  info.labelno = cfi_3tag_label_counter++;
++  info.render(stream);
++  fprintf(stream, ":\n");
++  cfi_3tag_meta_data.safe_push(info);
++}
++
++static void
++stack_policy_mark_start_epilogue(FILE *stream)
++{
++  cfi_3tag_info_t info;
++
++  info.flags = STACK_POLICY_EPILOGUE_START;
++  info.labelno = cfi_3tag_label_counter++;
++  info.render(stream);
++  fprintf(stream, ":\n");
++  cfi_3tag_meta_data.safe_push(info);
 +}
 +
 +static void
@@ -258,21 +288,36 @@
 +{
 +  unsigned ix;
 +  cfi_3tag_info_t *start;
++  cfi_3tag_info_t *end;
 +  cfi_3tag_info_t *info;
-+  //  int count;
++  cfi_3tag_info_t *prologue_end = 0;
++  cfi_3tag_info_t *epilogue_start = 0;
++  int count = 0;
++  int check_count = 0;
 +
 +  const char *fnname = get_fnname_from_decl (current_function_decl);
 +  start = 0;
++
++  FOR_EACH_VEC_ELT(cfi_3tag_meta_data, ix, info)
++  {
++    if (start == 0) {
++      start = info;
++      count++;
++    } else if (info->flags == STACK_POLICY_PROLOGUE_END) {
++    } else if (info->flags == STACK_POLICY_EPILOGUE_START) {
++    } else if (info->flags == CFI_3TAG_IS_FUNCTION_END) {
++    } else {
++      count++;
++    }
++  }
++  
++  start = 0;
++  
 +  //  printf("emitting meta data for %s\n", fnname);
 +  switch_to_section (text_meta_data_section);
-+  //  count = 0;
-+  //  FOR_EACH_VEC_ELT(cfi_3tag_meta_data, ix, info)
-+  //    {
-+  //      count++;
-+  //    }
 +  fprintf(stream, "\t.word 0x40\n"); // CFI record type
-+  fprintf(stream, "\t.word %d\n", cfi_3tag_meta_data.length() * POINTER_SIZE / 8); // CFI record length in bytes
-+  //  fprintf(stream, "\t.word %d\n", count * POINTER_SIZE / 8); // CFI record length in bytes
++  //  fprintf(stream, "\t.word %d\n", cfi_3tag_meta_data.length() * POINTER_SIZE / 8); // CFI record length in bytes
++  fprintf(stream, "\t.word %d\n", count * POINTER_SIZE / 8); // CFI record length in bytes
 +  #if 0
 +  fprintf(stream, "\t.byte 0x00\n"); // padding to dword boundary
 +  fprintf(stream, "\t.byte 0x00\n"); // padding to dword boundary
@@ -288,6 +333,13 @@
 +    if (start == 0) {
 +      start = info;
 +      fprintf(stream, "\t.dword %s\n", fnname);
++      check_count++;
++    } else if (info->flags == STACK_POLICY_PROLOGUE_END) {
++      prologue_end = info;
++    } else if (info->flags == STACK_POLICY_EPILOGUE_START) {
++      epilogue_start = info;
++    } else if (info->flags == CFI_3TAG_IS_FUNCTION_END) {
++      end = info;
 +    } else {
 +    //    fprintf(stream, "\t .dword %d\n", info->flags);
 +      fprintf(stream, "\t.dword ");
@@ -295,15 +347,55 @@
 +      fprintf(stream, " - ");
 +      start->render(stream);
 +      fprintf(stream, "\n");
++      check_count++;
 +    }
 +  }
++
++  gcc_assert(count == check_count);
++
++  // stack policy stuff
++  // you can have a prologue but no epilogue if you call something that is a noreturn function,
++  // such as longjmp.  In that case, there is a question about whether or not we should tag
++  // the prologue.  One answer is "yes", and it's the responsibility of the noreturn function
++  // to ultimately resort to some authorized function that will blanket clear the stack.
++  // for now, we'll just forgo protection, but we'll want to revisit this.
++  if (prologue_end && epilogue_start) {
++    //    gcc_assert(epilogue_start);
++    fprintf(stream, "\t.word 0x43\n"); // Stack prologue/epilogue info
++    fprintf(stream, "\t.word %d\n", (1 + 1 + 2) * POINTER_SIZE / 8); // fn start, prologue size, epilog start, epilog size
++    
++    // fn start
++    fprintf(stream, "\t.dword %s\n", fnname);
++    
++    // prologue size
++    fprintf(stream, "\t.dword ");
++    prologue_end->render(stream);
++    fprintf(stream, " - ");
++    start->render(stream);
++    fprintf(stream, "\n");
++    
++    // epilogue start (offset from fn start)
++    fprintf(stream, "\t.dword ");
++    epilogue_start->render(stream);
++    fprintf(stream, " - ");
++    start->render(stream);
++    fprintf(stream, "\n");
++    
++    // epilogue size
++    fprintf(stream, "\t.dword ");
++    end->render(stream);
++    fprintf(stream, " - ");
++    epilogue_start->render(stream);
++    fprintf(stream, "\n");
++  }
++  
 +  switch_to_section (current_function_section ());
 +}
 +
  /* Output assembler code for the start of a function,
     and initialize some of the variables in this file
     for the new function.  The label for the function and associated
-@@ -1803,6 +1944,8 @@
+@@ -1803,6 +2036,8 @@
  
    high_block_linenum = high_function_linenum = last_linenum;
  
@@ -312,7 +404,7 @@
    if (flag_sanitize & SANITIZE_ADDRESS)
      asan_function_start ();
  
-@@ -1817,6 +1960,9 @@
+@@ -1817,6 +2052,9 @@
      leaf_renumber_regs (first);
  #endif
  
@@ -322,7 +414,25 @@
    /* The Sun386i and perhaps other machines don't work right
       if the profiling code comes after the prologue.  */
    if (targetm.profile_before_prologue () && crtl->profile)
-@@ -1964,6 +2110,10 @@
+@@ -1880,6 +2118,8 @@
+   /* First output the function prologue: code to set up the stack frame.  */
+   targetm.asm_out.function_prologue (file, get_frame_size ());
+ 
++  //  stack_policy_mark_end_prologue(file);
++
+   /* If the machine represents the prologue as RTL, the profiling code must
+      be emitted when NOTE_INSN_PROLOGUE_END is scanned.  */
+ #ifdef HAVE_prologue
+@@ -1951,6 +2191,8 @@
+   if (!DECL_IGNORED_P (current_function_decl))
+     debug_hooks->end_function (high_function_linenum);
+ 
++  //  stack_policy_mark_start_epilogue(asm_out_file);
++  
+   /* Finally, output the function epilogue:
+      code to restore the stack frame and return to the caller.  */
+   targetm.asm_out.function_epilogue (asm_out_file, get_frame_size ());
+@@ -1964,6 +2206,10 @@
      dwarf2out_end_epilogue (last_linenum, last_filename);
  
    some_local_dynamic_name = 0;
@@ -333,7 +443,7 @@
  }
  
  
-@@ -2031,6 +2181,9 @@
+@@ -2031,6 +2277,9 @@
  
    last_ignored_compare = 0;
  
@@ -343,7 +453,7 @@
  #ifdef HAVE_cc0
    for (insn = first; insn; insn = NEXT_INSN (insn))
      {
-@@ -2089,6 +2242,14 @@
+@@ -2089,6 +2338,14 @@
        insn = final_scan_insn (insn, file, optimize_p, 0, &seen);
      }
  
@@ -358,7 +468,23 @@
    if (flag_debug_asm)
      {
        free (start_to_bb);
-@@ -2445,6 +2606,17 @@
+@@ -2268,6 +2525,7 @@
+ 	  break;
+ 
+ 	case NOTE_INSN_PROLOGUE_END:
++	  stack_policy_mark_end_prologue(file);
+ 	  targetm.asm_out.function_end_prologue (file);
+ 	  profile_after_prologue (file);
+ 
+@@ -2282,6 +2540,7 @@
+ 	  break;
+ 
+ 	case NOTE_INSN_EPILOGUE_BEG:
++	  stack_policy_mark_start_epilogue(file);
+           if (!DECL_IGNORED_P (current_function_decl))
+             (*debug_hooks->begin_epilogue) (last_linenum, last_filename);
+ 	  targetm.asm_out.function_begin_epilogue (file);
+@@ -2445,6 +2704,17 @@
        if (!DECL_IGNORED_P (current_function_decl) && LABEL_NAME (insn))
  	debug_hooks->label (as_a <rtx_code_label *> (insn));
  
@@ -376,7 +502,7 @@
        app_disable ();
  
        next = next_nonnote_insn (insn);
-@@ -2478,16 +2650,22 @@
+@@ -2478,16 +2748,22 @@
  #ifdef ASM_OUTPUT_CASE_LABEL
  	  ASM_OUTPUT_CASE_LABEL (file, "L", CODE_LABEL_NUMBER (insn),
  				 next);
@@ -401,7 +527,7 @@
        break;
  
      default:
-@@ -2979,11 +3157,20 @@
+@@ -2979,11 +3255,20 @@
  
  	NOTICE_UPDATE_CC (body, insn);
  #endif
