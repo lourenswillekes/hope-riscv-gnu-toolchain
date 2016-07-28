@@ -3461,7 +3461,7 @@ riscv_restore_reg (rtx reg, rtx mem)
 {
   riscv_emit_save_slot_move (reg, mem, RISCV_EPILOGUE_TEMP (GET_MODE (reg)));
   // and write it back so that any tags on the stack will be cleared
-  riscv_emit_save_slot_move (mem, reg, RISCV_EPILOGUE_TEMP (GET_MODE (reg)));
+//  riscv_emit_save_slot_move (mem, reg, RISCV_EPILOGUE_TEMP (GET_MODE (reg)));
 }
 
 /* Expand an "epilogue" or "sibcall_epilogue" pattern; SIBCALL_P
@@ -3529,6 +3529,23 @@ riscv_expand_epilogue (bool sibcall_p)
   /* Restore the registers.  */
   riscv_for_each_saved_gpr_and_fpr (frame->total_size - step2,
 				    riscv_restore_reg);
+  /* Write over the saved registers to ensure and FRAME tags are removed. */
+  riscv_for_each_saved_gpr_and_fpr (frame->total_size - step2,
+				    riscv_save_reg);
+  /* If we spilled varargs to the stack, write over those as well. */
+  if (cfun->machine->varargs_size)
+    {
+      HOST_WIDE_INT v_offset = cfun->machine->varargs_size;
+//      HOST_WIDE_INT base_v_offset = frame->arg_pointer_offset - step2;
+//      HOST_WIDE_INT base_v_offset = frame->arg_pointer_offset - step2;
+      HOST_WIDE_INT base_v_offset = frame->arg_pointer_offset - (frame->total_size - step2);
+//      HOST_WIDE_INT base_v_offset = frame->arg_pointer_offset;
+      while (v_offset) {
+	riscv_save_restore_reg(word_mode, GP_REG_FIRST,
+			       base_v_offset - v_offset, riscv_save_reg);
+	v_offset -= UNITS_PER_WORD;
+      }
+    }
 
   if (use_restore_libcall)
     {
