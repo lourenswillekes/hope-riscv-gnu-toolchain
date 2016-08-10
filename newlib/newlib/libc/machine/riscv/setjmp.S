@@ -49,7 +49,8 @@ setjmp:
 	ret
 
 /* volatile void longjmp (jmp_buf, int);  */
-  .globl  longjmp
+        .globl  longjmp
+        .align 3
 longjmp:
 	REG_L ra,  0*SZREG(a0)
 	REG_L s0,  1*SZREG(a0)
@@ -64,7 +65,26 @@ longjmp:
 	REG_L s9, 10*SZREG(a0)
 	REG_L s10,11*SZREG(a0)
 	REG_L s11,12*SZREG(a0)
+
+        # make sure we blow away any tags on the stack
+        addi sp, sp, -2 * SZREG
+        REG_S s0, 0(sp)
+        REG_S s1, SZREG(sp)
+        mv s0, sp
+        addi s0, s0, 2 * SZREG
+	REG_L s1, 13*SZREG(a0)
+1:      
+        REG_S zero, 0(s0)
+        addi s0, s0, SZREG
+        bne s0, s1, 1b
+        REG_L s0, 0(sp)
+        REG_L s1, SZREG(sp)
+        
 	REG_L sp, 13*SZREG(a0)
+
+        # this next code seems unwise to me - if the jump buffer is a local, then we may have reset SP
+        # past it just now, and if, for example, an interrupt comes in while we're doing the operations
+        # below, then a0 may be pointing at a buffer about to be corrupted.
 
 #ifdef __riscv_hard_float
 	REG_L a3, 15*SZREG(a0)
@@ -87,3 +107,7 @@ longjmp:
 	seqz a0, a1
 	add  a0, a0, a1   # a0 = (a1 == 0) ? 1 : a1
 	ret
+        .align 3
+        
+        .globl  longjmp_end
+longjmp_end:
