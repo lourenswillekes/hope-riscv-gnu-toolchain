@@ -43,6 +43,15 @@
 #define SYS_getdents 61
 #define SYS_dup 23
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+long
+__internal_syscall(long n, long _a0, long _a1, long _a2, long _a3);
+#ifdef __cplusplus
+}
+#endif
+#if 0
 static inline long
 __internal_syscall(long n, long _a0, long _a1, long _a2, long _a3)
 {
@@ -58,5 +67,6 @@ __internal_syscall(long n, long _a0, long _a1, long _a2, long _a3)
 
   return a0;
 }
+#endif
 
 #endif
