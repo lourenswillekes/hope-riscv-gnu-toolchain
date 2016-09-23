@@ -148,131 +148,218 @@
  	.section ".tdata","awT",@progbits
 --- original-gcc/gcc/final.c
 +++ gcc/gcc/final.c
-@@ -232,6 +232,45 @@
+@@ -232,6 +232,145 @@
  /* True if profile_function should be called, but hasn't been called yet.  */
  static bool need_profile_function;
  
-+#define CFI_3TAG_IS_SOURCE 0x1
-+#define CFI_3TAG_IS_TARGET 0x2
-+#define CFI_3TAG_IS_FUNCTION_START 0x4
-+#define CFI_3TAG_IS_FUNCTION_END 0x8
-+#define STACK_POLICY_PROLOGUE_END 0x10
-+#define STACK_POLICY_EPILOGUE_START 0x11
-+
-+int cfi_3tag_label_counter = 0;
-+class cfi_3tag_info_t {
++class dover_meta_data_label_t {
 + public:
-+  unsigned flags;
-+  int labelno;
-+  void render(FILE *stream) {
-+    //    char *const buf = (char *) alloca (40 + strlen (prefix));
-+    if (isTarget() && isSource())
-+      fprintf(stream, ".Lcfi3t_both_");
-+    else if (isTarget())
-+      fprintf(stream, ".Lcfi3t_tgt_");
-+    else if (isFunctionStart())
-+      fprintf(stream, ".Lcfi3t_fn_start");
-+    else if (isFunctionEnd())
-+      fprintf(stream, ".Lcfi3t_fn_end");
-+    else if (flags == STACK_POLICY_PROLOGUE_END)
-+      fprintf(stream, ".Lstack_policy_prologue_end_");
-+    else if (flags == STACK_POLICY_EPILOGUE_START)
-+      fprintf(stream, ".Lstack_policy_epilogue_start_");
-+    else
-+      fprintf(stream, ".Lcfi3t_src_");
-+    fprintf(stream, "%d", labelno);
++ dover_meta_data_label_t(const char *prefix) : prefix(prefix), labelno(label_counter++) { }
++ dover_meta_data_label_t(dover_meta_data_label_t const &r) : prefix(r.prefix), labelno(r.labelno) { }
++  void render(FILE *stream) const {
++    fprintf(stream, "%s%d", prefix, labelno);
++  }
++  void render_as_target(FILE *stream) {
++    render(stream);
++    fprintf(stream, ":\n");
 +  }
 + private:
-+  bool isTarget() { return flags & CFI_3TAG_IS_TARGET; }
-+  bool isSource() { return flags & CFI_3TAG_IS_SOURCE; }
-+  bool isFunctionStart() { return flags & CFI_3TAG_IS_FUNCTION_START; }
-+  bool isFunctionEnd() { return flags & CFI_3TAG_IS_FUNCTION_END; }
++  static int label_counter;
++  const char *prefix;
++  int labelno;
 +};
 +
-+static vec<cfi_3tag_info_t> cfi_3tag_meta_data;
++int dover_meta_data_label_t::label_counter = 0;
++
++#define DMD_SET_BASE_ADDRESS_OP 1u
++#define DMD_TAG_ADDRESS_OP 2u
++#define DMD_TAG_ADDRESS_RANGE_OP 3u
++
++#define DMT_CFI3L_VALID_TGT 1u
++#define DMT_STACK_PROLOGUE_AUTHORITY 2u
++#define DMT_STACK_EPILOGUE_AUTHORITY 3u
++
++class dmd_renderer_t {
++  FILE *fp;
++  const char *fnname;
++ public:
++  void render_unsigned(unsigned v) {
++#ifdef HAVE_AS_LEB128
++    fprintf(fp, "\t.uleb128 %d\n", v);
++#else
++    fprintf(fp, "\t.byte %d\n", v);
++#endif
++  }
++  
++  void render_unsigned32(unsigned v) {
++    fprintf(fp, "\t.word %d\n", v);
++  }
++  
++  void render_base_op(unsigned op) {
++    render_unsigned(op);
++  }
++
++  void render_tag(unsigned tag) {
++    render_unsigned(tag);
++  }
++  
++  void render_fn_relative_offset(dover_meta_data_label_t const *label) {
++#ifdef HAVE_AS_LEB128
++    fprintf(fp, "\t.uleb128 ");
++#else
++    fprintf(fp, "\t.word ");
++#endif
++    label->render(fp);
++    fprintf(fp, " - %s\n", fnname);
++  }
++
++  void start_function(FILE *fp) {
++    this->fp = fp;
++    
++    // set the base address for subsequent ops
++    render_base_op(DMD_SET_BASE_ADDRESS_OP);
++    fnname = get_fnname_from_decl (current_function_decl);
++    fprintf(fp, "\t.dword %s\n", fnname);
++  }
++};
++
++class dover_meta_data_op_t {
++ public:
++  virtual void render(dmd_renderer_t *r) = 0;
++};
++
++class dmd_point_op_t : public dover_meta_data_op_t {
++ public:
++ dmd_point_op_t(dover_meta_data_label_t *addr) : addr(addr) { }
++  ~dmd_point_op_t() { delete addr; }
++ protected:
++  dover_meta_data_label_t *addr;
++};
++
++class dmd_ranged_op_t : public dover_meta_data_op_t {
++ protected:
++  dover_meta_data_label_t *start;
++  dover_meta_data_label_t *end;
++ public:
++  void set_start(dover_meta_data_label_t *l) { start = l; }
++  void set_end(dover_meta_data_label_t *l) { end = l; }
++};
++
++class dmdop_func_start_t : public dover_meta_data_op_t {
++ public:
++  void render(dmd_renderer_t *r) {
++    // function start is a valid CFI target
++    r->render_base_op(DMD_TAG_ADDRESS_OP);
++    r->render_unsigned32(0); // FIXME - should be uleb128, but we are stuck for now
++    r->render_tag(DMT_CFI3L_VALID_TGT);
++  }
++};
++
++class dmdop_prologue_auth_t : public dmd_ranged_op_t {
++ public:
++  void render(dmd_renderer_t *r) {
++    r->render_base_op( DMD_TAG_ADDRESS_RANGE_OP);
++    r->render_fn_relative_offset(start);
++    r->render_fn_relative_offset(end);
++    r->render_tag(DMT_STACK_PROLOGUE_AUTHORITY);
++  }
++};
++
++class dmdop_epilogue_auth_t : public dmd_ranged_op_t {
++ public:
++  void render(dmd_renderer_t *r) {
++    r->render_base_op( DMD_TAG_ADDRESS_RANGE_OP);
++    r->render_fn_relative_offset(start);
++    r->render_fn_relative_offset(end);
++    r->render_tag(DMT_STACK_EPILOGUE_AUTHORITY);
++  }
++};
++
++class dmdop_cfi_tgt_t : public dmd_point_op_t {
++ public:
++ dmdop_cfi_tgt_t(dover_meta_data_label_t *l) : dmd_point_op_t(l) { }
++  void render(dmd_renderer_t *r) {
++    r->render_base_op(DMD_TAG_ADDRESS_OP);
++    r->render_fn_relative_offset(addr);
++    r->render_tag(DMT_CFI3L_VALID_TGT);
++  }
++};
++
++dmdop_prologue_auth_t *dmd_prologue_authority;
++dmdop_epilogue_auth_t *dmd_epilogue_authority;
++bool past_prologue;
++
++static vec<dover_meta_data_op_t *> dover_meta_data_ops;
 +
  static int asm_insn_count (rtx);
  static void profile_function (FILE *);
  static void profile_after_prologue (FILE *);
-@@ -1777,6 +1816,200 @@
+@@ -1777,6 +1916,103 @@
    return 0;
  }
  
 +static void
 +cfi_3tag_mark_source_instruction(FILE *stream, int is_target)
 +{
-+  #if 0
-+  cfi_3tag_info_t info;
-+  info.flags = is_target ? CFI_3TAG_IS_SOURCE | CFI_3TAG_IS_TARGET : CFI_3TAG_IS_SOURCE;
-+  info.labelno = cfi_3tag_label_counter++;
-+  info.render(stream);
-+  fprintf(stream, ":\n");
-+  cfi_3tag_meta_data.safe_push(info);
-+  //  info.render(stdout);
-+  //  printf("\n");
-+  #endif
 +}
 +
 +static void
 +cfi_3tag_mark_target_instruction(FILE *stream)
 +{
-+  cfi_3tag_info_t info;
-+
-+  info.flags = CFI_3TAG_IS_TARGET;
-+  info.labelno = cfi_3tag_label_counter++;
-+  info.render(stream);
-+  fprintf(stream, ":\n");
-+  cfi_3tag_meta_data.safe_push(info);
++  dover_meta_data_label_t *l = new dover_meta_data_label_t(".Lcfi3t_tgt__");
++  l->render_as_target(stream);
++  dmdop_cfi_tgt_t *op = new dmdop_cfi_tgt_t(l);
++  dover_meta_data_ops.safe_push(op);
 +  //  info.render(stdout);
 +  //  printf("\n");
 +}
 +
 +static void
++stack_policy_note_prologue_inst(FILE *stream) {
++  if (!dmd_prologue_authority) {
++    dmd_prologue_authority = new dmdop_prologue_auth_t();
++    dover_meta_data_label_t *l = new dover_meta_data_label_t(".Lstack_policy_prologue_");
++    l->render_as_target(stream);
++    dmd_prologue_authority->set_start(l);
++    dover_meta_data_ops.safe_push(dmd_prologue_authority);
++  }
++}
++
++static void
++stack_policy_note_non_prologue_inst(FILE *stream) {
++  if (dmd_prologue_authority) {
++    dover_meta_data_label_t *l = new dover_meta_data_label_t(".Lstack_policy_prologue_");
++    l->render_as_target(stream);
++    dmd_prologue_authority->set_end(l);
++    dmd_prologue_authority = NULL;
++  }
++}
++
++static void
 +stack_policy_mark_end_prologue(FILE *stream)
 +{
-+  cfi_3tag_info_t info;
-+
-+  info.flags = STACK_POLICY_PROLOGUE_END;
-+  info.labelno = cfi_3tag_label_counter++;
-+  info.render(stream);
-+  fprintf(stream, ":\n");
-+  cfi_3tag_meta_data.safe_push(info);
++  stack_policy_note_non_prologue_inst(stream);
 +}
 +
 +static void
-+stack_policy_mark_start_epilogue(FILE *stream)
-+{
-+  cfi_3tag_info_t info;
-+
-+  info.flags = STACK_POLICY_EPILOGUE_START;
-+  info.labelno = cfi_3tag_label_counter++;
-+  info.render(stream);
-+  fprintf(stream, ":\n");
-+  cfi_3tag_meta_data.safe_push(info);
++stack_policy_note_epilogue_inst(FILE *stream) {
++  if (!dmd_epilogue_authority) {
++    dmd_epilogue_authority = new dmdop_epilogue_auth_t();
++    dover_meta_data_label_t *l = new dover_meta_data_label_t(".Lstack_policy_epilogue_");
++    l->render_as_target(stream);
++    dmd_epilogue_authority->set_start(l);
++    dover_meta_data_ops.safe_push(dmd_epilogue_authority);
++  }
 +}
 +
 +static void
-+cfi_3tag_mark_function_start(FILE *stream)
-+{
-+  cfi_3tag_info_t info;
-+
-+  info.flags = CFI_3TAG_IS_FUNCTION_START;
-+  info.labelno = cfi_3tag_label_counter++;
-+  info.render(stream);
-+  fprintf(stream, ":\n");
-+  cfi_3tag_meta_data.safe_push(info);
-+}
-+
-+static void
-+cfi_3tag_mark_function_end(FILE *stream)
-+{
-+  cfi_3tag_info_t info;
-+
-+  info.flags = CFI_3TAG_IS_FUNCTION_END;
-+  info.labelno = cfi_3tag_label_counter++;
-+  info.render(stream);
-+  fprintf(stream, ":\n");
-+  cfi_3tag_meta_data.safe_push(info);
++stack_policy_note_non_epilogue_inst(FILE *stream) {
++  if (dmd_epilogue_authority) {
++    dover_meta_data_label_t *l = new dover_meta_data_label_t(".Lstack_policy_epilogue_");
++    l->render_as_target(stream);
++    dmd_epilogue_authority->set_end(l);
++    dmd_epilogue_authority = NULL;
++  }
 +}
 +
 +static int next_insn_is_target = 0;
@@ -283,110 +370,26 @@
 +  next_insn_is_target = 0;
 +}
 +
++dmd_renderer_t dmd_renderer;
++
 +static void
 +flush_dover_meta_data(FILE *stream)
 +{
-+  unsigned ix;
-+  cfi_3tag_info_t *start;
-+  cfi_3tag_info_t *end;
-+  cfi_3tag_info_t *info;
-+  cfi_3tag_info_t *prologue_end = 0;
-+  cfi_3tag_info_t *epilogue_start = 0;
-+  int count = 0;
-+  int check_count = 0;
-+
-+  const char *fnname = get_fnname_from_decl (current_function_decl);
-+  start = 0;
-+
-+  FOR_EACH_VEC_ELT(cfi_3tag_meta_data, ix, info)
-+  {
-+    if (start == 0) {
-+      start = info;
-+      count++;
-+    } else if (info->flags == STACK_POLICY_PROLOGUE_END) {
-+    } else if (info->flags == STACK_POLICY_EPILOGUE_START) {
-+    } else if (info->flags == CFI_3TAG_IS_FUNCTION_END) {
-+    } else {
-+      count++;
-+    }
-+  }
++  gcc_assert(!dmd_prologue_authority);
++  // make sure that the epilogue gets closed out
++  stack_policy_note_non_epilogue_inst(asm_out_file);
 +  
-+  start = 0;
-+  
-+  //  printf("emitting meta data for %s\n", fnname);
 +  switch_to_section (text_meta_data_section);
-+  fprintf(stream, "\t.word 0x40\n"); // CFI record type
-+  //  fprintf(stream, "\t.word %d\n", cfi_3tag_meta_data.length() * POINTER_SIZE / 8); // CFI record length in bytes
-+  fprintf(stream, "\t.word %d\n", count * POINTER_SIZE / 8); // CFI record length in bytes
-+  #if 0
-+  fprintf(stream, "\t.byte 0x00\n"); // padding to dword boundary
-+  fprintf(stream, "\t.byte 0x00\n"); // padding to dword boundary
-+  fprintf(stream, "\t.byte 0x00\n"); // padding to dword boundary
-+  fprintf(stream, "\t.byte 0x00\n"); // padding to dword boundary
-+  fprintf(stream, "\t.byte 0x00\n"); // padding to dword boundary
-+  #endif
-+  //  fprintf(stream, "\t.weakref %s\n", fnname);
-+  //  fprintf(stream, "\t.dword %s\n", fnname);
-+  //  fprintf(stream, "\t.dword %d\n", cfi_3tag_meta_data.length());
-+  FOR_EACH_VEC_ELT(cfi_3tag_meta_data, ix, info)
++  
++  dmd_renderer.start_function(stream);
++  dmdop_func_start_t func_start;
++
++  func_start.render(&dmd_renderer);
++  unsigned ix;
++  dover_meta_data_op_t *op;
++  FOR_EACH_VEC_ELT(dover_meta_data_ops, ix, op)
 +  {
-+    if (start == 0) {
-+      start = info;
-+      fprintf(stream, "\t.dword %s\n", fnname);
-+      check_count++;
-+    } else if (info->flags == STACK_POLICY_PROLOGUE_END) {
-+      prologue_end = info;
-+    } else if (info->flags == STACK_POLICY_EPILOGUE_START) {
-+      epilogue_start = info;
-+    } else if (info->flags == CFI_3TAG_IS_FUNCTION_END) {
-+      end = info;
-+    } else {
-+    //    fprintf(stream, "\t .dword %d\n", info->flags);
-+      fprintf(stream, "\t.dword ");
-+      info->render(stream);
-+      fprintf(stream, " - ");
-+      start->render(stream);
-+      fprintf(stream, "\n");
-+      check_count++;
-+    }
-+  }
-+
-+  gcc_assert(count == check_count);
-+
-+  // stack policy stuff
-+  // you can have a prologue but no epilogue if you call something that is a noreturn function,
-+  // such as longjmp.  In that case, there is a question about whether or not we should tag
-+  // the prologue.  One answer is "yes", and it's the responsibility of the noreturn function
-+  // to ultimately resort to some authorized function that will blanket clear the stack.
-+  // for now, we'll just forgo protection, but we'll want to revisit this.
-+  if (prologue_end && epilogue_start) {
-+    //    gcc_assert(epilogue_start);
-+    fprintf(stream, "\t.word 0x43\n"); // Stack prologue/epilogue info
-+    fprintf(stream, "\t.word %d\n", (1 + 1 + 2) * POINTER_SIZE / 8); // fn start, prologue size, epilog start, epilog size
-+    
-+    // fn start
-+    fprintf(stream, "\t.dword %s\n", fnname);
-+    
-+    // prologue size
-+    fprintf(stream, "\t.dword ");
-+    prologue_end->render(stream);
-+    fprintf(stream, " - ");
-+    start->render(stream);
-+    fprintf(stream, "\n");
-+    
-+    // epilogue start (offset from fn start)
-+    fprintf(stream, "\t.dword ");
-+    epilogue_start->render(stream);
-+    fprintf(stream, " - ");
-+    start->render(stream);
-+    fprintf(stream, "\n");
-+    
-+    // epilogue size
-+    fprintf(stream, "\t.dword ");
-+    end->render(stream);
-+    fprintf(stream, " - ");
-+    epilogue_start->render(stream);
-+    fprintf(stream, "\n");
++    op->render(&dmd_renderer);
 +  }
 +  
 +  switch_to_section (current_function_section ());
@@ -395,26 +398,36 @@
  /* Output assembler code for the start of a function,
     and initialize some of the variables in this file
     for the new function.  The label for the function and associated
-@@ -1803,6 +2036,8 @@
+@@ -1787,6 +2023,8 @@
+    OPTIMIZE_P is nonzero if we should eliminate redundant
+      test and compare insns.  */
+ 
++extern void dump_frame_info(FILE *file);
++
+ void
+ final_start_function (rtx_insn *first, FILE *file,
+ 		      int optimize_p ATTRIBUTE_UNUSED)
+@@ -1803,6 +2041,10 @@
  
    high_block_linenum = high_function_linenum = last_linenum;
  
-+  cfi_3tag_meta_data.create(0);
++  //  dump_frame_info(file);
++  dover_meta_data_ops.create(0);
++  past_prologue = false;
 +  
    if (flag_sanitize & SANITIZE_ADDRESS)
      asan_function_start ();
  
-@@ -1817,6 +2052,9 @@
+@@ -1817,6 +2059,8 @@
      leaf_renumber_regs (first);
  #endif
  
 +  next_insn_is_target = 0;
-+  cfi_3tag_mark_function_start(file);
 +
    /* The Sun386i and perhaps other machines don't work right
       if the profiling code comes after the prologue.  */
    if (targetm.profile_before_prologue () && crtl->profile)
-@@ -1880,6 +2118,8 @@
+@@ -1880,6 +2124,8 @@
    /* First output the function prologue: code to set up the stack frame.  */
    targetm.asm_out.function_prologue (file, get_frame_size ());
  
@@ -423,86 +436,44 @@
    /* If the machine represents the prologue as RTL, the profiling code must
       be emitted when NOTE_INSN_PROLOGUE_END is scanned.  */
  #ifdef HAVE_prologue
-@@ -1951,6 +2191,8 @@
-   if (!DECL_IGNORED_P (current_function_decl))
-     debug_hooks->end_function (high_function_linenum);
- 
-+  //  stack_policy_mark_start_epilogue(asm_out_file);
-+  
-   /* Finally, output the function epilogue:
-      code to restore the stack frame and return to the caller.  */
-   targetm.asm_out.function_epilogue (asm_out_file, get_frame_size ());
-@@ -1964,6 +2206,10 @@
+@@ -1964,6 +2210,9 @@
      dwarf2out_end_epilogue (last_linenum, last_filename);
  
    some_local_dynamic_name = 0;
-+  cfi_3tag_mark_function_end(asm_out_file);
 +  ASM_OUTPUT_ALIGN(asm_out_file, 3);
 +  flush_dover_meta_data(asm_out_file);
-+  cfi_3tag_meta_data.release();
++  dover_meta_data_ops.release();
  }
  
  
-@@ -2031,6 +2277,9 @@
+@@ -2212,6 +2461,17 @@
+   if (insn->deleted ())
+     return NEXT_INSN (insn);
  
-   last_ignored_compare = 0;
- 
-+  //  printf("creating meta data\n");
-+  //  cfi_3tag_meta_data.create(0);
++  if (RTX_FRAME_RELATED_P (insn))
++    if (past_prologue)
++      stack_policy_note_epilogue_inst(asm_out_file);
++    else
++      stack_policy_note_prologue_inst(asm_out_file);
++  else
++    if (past_prologue)
++      stack_policy_note_non_epilogue_inst(asm_out_file);
++    else
++      stack_policy_note_non_prologue_inst(asm_out_file);
 +
- #ifdef HAVE_cc0
-   for (insn = first; insn; insn = NEXT_INSN (insn))
+   switch (GET_CODE (insn))
      {
-@@ -2089,6 +2338,14 @@
-       insn = final_scan_insn (insn, file, optimize_p, 0, &seen);
-     }
- 
-+#if 0
-+  {
-+      int align = MIN (BIGGEST_ALIGNMENT, LONG_TYPE_SIZE);
-+      switch_to_section (text_meta_data_section);
-+      assemble_integer (const0_rtx, LONG_TYPE_SIZE / BITS_PER_UNIT, align, 1);
-+  }
-+#endif
-+
-   if (flag_debug_asm)
-     {
-       free (start_to_bb);
-@@ -2268,6 +2525,7 @@
+     case NOTE:
+@@ -2268,6 +2528,8 @@
  	  break;
  
  	case NOTE_INSN_PROLOGUE_END:
-+	  stack_policy_mark_end_prologue(file);
++	  //	  stack_policy_mark_end_prologue(file);
++	  past_prologue = true;
  	  targetm.asm_out.function_end_prologue (file);
  	  profile_after_prologue (file);
  
-@@ -2282,6 +2540,7 @@
- 	  break;
- 
- 	case NOTE_INSN_EPILOGUE_BEG:
-+	  stack_policy_mark_start_epilogue(file);
-           if (!DECL_IGNORED_P (current_function_decl))
-             (*debug_hooks->begin_epilogue) (last_linenum, last_filename);
- 	  targetm.asm_out.function_begin_epilogue (file);
-@@ -2445,6 +2704,17 @@
-       if (!DECL_IGNORED_P (current_function_decl) && LABEL_NAME (insn))
- 	debug_hooks->label (as_a <rtx_code_label *> (insn));
- 
-+#if 0
-+      {
-+	printf("here's a label: %s\n", LABEL_NAME(insn));
-+	switch_to_section (text_meta_data_section);
-+	//	ASM_OUTPUT_LABEL_REF(
-+		fprintf(file, "dd %s\n", LABEL_NAME(insn));
-+	switch_to_section (current_function_section ());
-+	//	assemble_integer (const0_rtx, LONG_TYPE_SIZE / BITS_PER_UNIT, align, 1);
-+      }
-+#endif
-+
-       app_disable ();
- 
-       next = next_nonnote_insn (insn);
-@@ -2478,16 +2748,22 @@
+@@ -2478,16 +2740,22 @@
  #ifdef ASM_OUTPUT_CASE_LABEL
  	  ASM_OUTPUT_CASE_LABEL (file, "L", CODE_LABEL_NUMBER (insn),
  				 next);
@@ -527,7 +498,7 @@
        break;
  
      default:
-@@ -2979,11 +3255,20 @@
+@@ -2979,11 +3247,20 @@
  
  	NOTICE_UPDATE_CC (body, insn);
  #endif
