@@ -159,3 +159,16 @@
  	mn10200) AC_CONFIG_SUBDIRS(mn10200) ;;
  	mn10300) AC_CONFIG_SUBDIRS(mn10300) ;;
  	moxie) AC_CONFIG_SUBDIRS(moxie) ;;
+--- original-newlib/newlib/libc/stdlib/mallocr.c
++++ newlib-gcc/newlib/libc/stdlib/mallocr.c
+@@ -1003,8 +1003,8 @@
+ #ifdef INTERNAL_NEWLIB
+ 
+ #define cALLOc		_calloc_r
+-#define fREe		_free_r
+-#define mALLOc		_malloc_r
++#define fREe		_usf_free_r
++#define mALLOc		_usf_malloc_r
+ #define mEMALIGn	_memalign_r
+ #define rEALLOc		_realloc_r
+ #define vALLOc		_valloc_r
