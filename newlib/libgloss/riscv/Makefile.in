@@ -11,6 +11,7 @@ gloss_hdrs = \
 gloss_srcs = \
 	syscalls.c \
 	syscall_internal.c \
+	malloc_wrapper.c \
 	bthread-keys.c \
 
 # Extra files
