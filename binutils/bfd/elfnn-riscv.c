@@ -2896,11 +2896,13 @@ _bfd_riscv_relax_section (bfd *abfd, asection *sec,
       if (info->relax_pass == 0)
 	{
 	  if (type == R_RISCV_CALL || type == R_RISCV_CALL_PLT)
-	    relax_func = _bfd_riscv_relax_call;
+//	    relax_func = _bfd_riscv_relax_call;
+	    relax_func = NULL;
 	  else if (type == R_RISCV_HI20
 		   || type == R_RISCV_LO12_I
 		   || type == R_RISCV_LO12_S)
-	    relax_func = _bfd_riscv_relax_lui;
+//	    relax_func = _bfd_riscv_relax_lui;
+	    relax_func = NULL;
 	  else if (type == R_RISCV_TPREL_HI20 || type == R_RISCV_TPREL_ADD)
 	    relax_func = _bfd_riscv_relax_tls_le;
 	}

@@ -323,15 +323,10 @@
  static int asm_insn_count (rtx);
  static void profile_function (FILE *);
  static void profile_after_prologue (FILE *);
-@@ -1777,6 +1945,111 @@
+@@ -1777,6 +1945,113 @@
    return 0;
  }
  
-+static void
-+cfi_3tag_mark_source_instruction(FILE *stream, int is_target)
-+{
-+}
-+
 +static void
 +cfi_3tag_mark_target_instruction(FILE *stream)
 +{
@@ -341,6 +336,13 @@
 +  dover_meta_data_ops.safe_push(op);
 +  //  info.render(stdout);
 +  //  printf("\n");
++}
++
++static void
++cfi_3tag_mark_source_instruction(FILE *stream, int is_target)
++{
++  if (is_target)
++    cfi_3tag_mark_target_instruction(stream);
 +}
 +
 +static void
@@ -435,7 +437,7 @@
  /* Output assembler code for the start of a function,
     and initialize some of the variables in this file
     for the new function.  The label for the function and associated
-@@ -1787,6 +2060,8 @@
+@@ -1787,6 +2062,8 @@
     OPTIMIZE_P is nonzero if we should eliminate redundant
       test and compare insns.  */
  
@@ -444,7 +446,7 @@
  void
  final_start_function (rtx_insn *first, FILE *file,
  		      int optimize_p ATTRIBUTE_UNUSED)
-@@ -1803,6 +2078,10 @@
+@@ -1803,6 +2080,10 @@
  
    high_block_linenum = high_function_linenum = last_linenum;
  
@@ -455,7 +457,7 @@
    if (flag_sanitize & SANITIZE_ADDRESS)
      asan_function_start ();
  
-@@ -1817,6 +2096,8 @@
+@@ -1817,6 +2098,8 @@
      leaf_renumber_regs (first);
  #endif
  
@@ -464,7 +466,7 @@
    /* The Sun386i and perhaps other machines don't work right
       if the profiling code comes after the prologue.  */
    if (targetm.profile_before_prologue () && crtl->profile)
-@@ -1880,6 +2161,8 @@
+@@ -1880,6 +2163,8 @@
    /* First output the function prologue: code to set up the stack frame.  */
    targetm.asm_out.function_prologue (file, get_frame_size ());
  
@@ -473,7 +475,7 @@
    /* If the machine represents the prologue as RTL, the profiling code must
       be emitted when NOTE_INSN_PROLOGUE_END is scanned.  */
  #ifdef HAVE_prologue
-@@ -1964,6 +2247,9 @@
+@@ -1964,6 +2249,9 @@
      dwarf2out_end_epilogue (last_linenum, last_filename);
  
    some_local_dynamic_name = 0;
@@ -483,7 +485,7 @@
  }
  
  
-@@ -2212,6 +2498,17 @@
+@@ -2212,6 +2500,17 @@
    if (insn->deleted ())
      return NEXT_INSN (insn);
  
@@ -501,7 +503,7 @@
    switch (GET_CODE (insn))
      {
      case NOTE:
-@@ -2268,6 +2565,8 @@
+@@ -2268,6 +2567,8 @@
  	  break;
  
  	case NOTE_INSN_PROLOGUE_END:
@@ -510,7 +512,7 @@
  	  targetm.asm_out.function_end_prologue (file);
  	  profile_after_prologue (file);
  
-@@ -2478,16 +2777,23 @@
+@@ -2478,16 +2779,23 @@
  #ifdef ASM_OUTPUT_CASE_LABEL
  	  ASM_OUTPUT_CASE_LABEL (file, "L", CODE_LABEL_NUMBER (insn),
  				 next);
@@ -536,7 +538,7 @@
        break;
  
      default:
-@@ -2979,11 +3285,20 @@
+@@ -2979,11 +3287,20 @@
  
  	NOTICE_UPDATE_CC (body, insn);
  #endif
