@@ -148,7 +148,7 @@
  	.section ".tdata","awT",@progbits
 --- original-gcc/gcc/final.c
 +++ gcc/gcc/final.c
-@@ -232,6 +232,145 @@
+@@ -232,6 +232,174 @@
  /* True if profile_function should be called, but hasn't been called yet.  */
  static bool need_profile_function;
  
@@ -174,6 +174,8 @@
 +#define DMD_SET_BASE_ADDRESS_OP 1u
 +#define DMD_TAG_ADDRESS_OP 2u
 +#define DMD_TAG_ADDRESS_RANGE_OP 3u
++#define DMD_END_BLOCK 8u
++#define DMD_END_BLOCK_WEAK_DECL_HACK 9u
 +
 +#define DMT_CFI3L_VALID_TGT 1u
 +#define DMT_STACK_PROLOGUE_AUTHORITY 2u
@@ -204,6 +206,7 @@
 +  }
 +  
 +  void render_fn_relative_offset(dover_meta_data_label_t const *label) {
++#if 0
 +#ifdef HAVE_AS_LEB128
 +    fprintf(fp, "\t.uleb128 ");
 +#else
@@ -211,6 +214,16 @@
 +#endif
 +    label->render(fp);
 +    fprintf(fp, " - %s\n", fnname);
++#else
++    fprintf(fp, ".set .L_DMD_SIZE_");
++    label->render(fp);
++    fprintf(fp, ", ");
++    label->render(fp);
++    fprintf(fp, " - %s\n", fnname);
++    fprintf(fp, "\t.word .L_DMD_SIZE_");
++    label->render(fp);
++    fprintf(fp, "\n");
++#endif
 +  }
 +
 +  void start_function(FILE *fp) {
@@ -220,6 +233,22 @@
 +    render_base_op(DMD_SET_BASE_ADDRESS_OP);
 +    fnname = get_fnname_from_decl (current_function_decl);
 +    fprintf(fp, "\t.dword %s\n", fnname);
++  }
++
++  void end_function(FILE *fp, dover_meta_data_label_t const *l) {
++    if (l) {
++      render_base_op(DMD_END_BLOCK);
++      render_fn_relative_offset(l);
++    } else {
++      render_base_op(DMD_END_BLOCK_WEAK_DECL_HACK);
++      fprintf(fp, "\t.asciz\t\"%s\"\n", get_fnname_from_decl (current_function_decl));
++    }
++#if 0
++    fprintf(fp, "\t.dword\t");
++    l->render(fp);
++    fnname = get_fnname_from_decl (current_function_decl);
++    fprintf(fp, " - %s\n", fnname);
++#endif
 +  }
 +};
 +
@@ -294,7 +323,7 @@
  static int asm_insn_count (rtx);
  static void profile_function (FILE *);
  static void profile_after_prologue (FILE *);
-@@ -1777,6 +1916,103 @@
+@@ -1777,6 +1945,111 @@
    return 0;
  }
  
@@ -378,6 +407,13 @@
 +  gcc_assert(!dmd_prologue_authority);
 +  // make sure that the epilogue gets closed out
 +  stack_policy_note_non_epilogue_inst(asm_out_file);
++//  dover_meta_data_label_t *l = NULL;
++//  if (!DECL_WEAK (current_function_decl)) {
++//    l = new dover_meta_data_label_t(".Ldmd_end_function_");
++//    l->render_as_target(stream);
++//  }
++  dover_meta_data_label_t *l = new dover_meta_data_label_t(".Ldmd_end_function_");
++  l->render_as_target(stream);
 +  
 +  switch_to_section (text_meta_data_section);
 +  
@@ -391,14 +427,15 @@
 +  {
 +    op->render(&dmd_renderer);
 +  }
-+  
++
++  dmd_renderer.end_function(stream, l);
 +  switch_to_section (current_function_section ());
 +}
 +
  /* Output assembler code for the start of a function,
     and initialize some of the variables in this file
     for the new function.  The label for the function and associated
-@@ -1787,6 +2023,8 @@
+@@ -1787,6 +2060,8 @@
     OPTIMIZE_P is nonzero if we should eliminate redundant
       test and compare insns.  */
  
@@ -407,7 +444,7 @@
  void
  final_start_function (rtx_insn *first, FILE *file,
  		      int optimize_p ATTRIBUTE_UNUSED)
-@@ -1803,6 +2041,10 @@
+@@ -1803,6 +2078,10 @@
  
    high_block_linenum = high_function_linenum = last_linenum;
  
@@ -418,7 +455,7 @@
    if (flag_sanitize & SANITIZE_ADDRESS)
      asan_function_start ();
  
-@@ -1817,6 +2059,8 @@
+@@ -1817,6 +2096,8 @@
      leaf_renumber_regs (first);
  #endif
  
@@ -427,7 +464,7 @@
    /* The Sun386i and perhaps other machines don't work right
       if the profiling code comes after the prologue.  */
    if (targetm.profile_before_prologue () && crtl->profile)
-@@ -1880,6 +2124,8 @@
+@@ -1880,6 +2161,8 @@
    /* First output the function prologue: code to set up the stack frame.  */
    targetm.asm_out.function_prologue (file, get_frame_size ());
  
@@ -436,7 +473,7 @@
    /* If the machine represents the prologue as RTL, the profiling code must
       be emitted when NOTE_INSN_PROLOGUE_END is scanned.  */
  #ifdef HAVE_prologue
-@@ -1964,6 +2210,9 @@
+@@ -1964,6 +2247,9 @@
      dwarf2out_end_epilogue (last_linenum, last_filename);
  
    some_local_dynamic_name = 0;
@@ -446,7 +483,7 @@
  }
  
  
-@@ -2212,6 +2461,17 @@
+@@ -2212,6 +2498,17 @@
    if (insn->deleted ())
      return NEXT_INSN (insn);
  
@@ -464,7 +501,7 @@
    switch (GET_CODE (insn))
      {
      case NOTE:
-@@ -2268,6 +2528,8 @@
+@@ -2268,6 +2565,8 @@
  	  break;
  
  	case NOTE_INSN_PROLOGUE_END:
@@ -473,11 +510,12 @@
  	  targetm.asm_out.function_end_prologue (file);
  	  profile_after_prologue (file);
  
-@@ -2478,16 +2740,22 @@
+@@ -2478,16 +2777,23 @@
  #ifdef ASM_OUTPUT_CASE_LABEL
  	  ASM_OUTPUT_CASE_LABEL (file, "L", CODE_LABEL_NUMBER (insn),
  				 next);
-+	  cfi_3tag_internal_label(file, "L", CODE_LABEL_NUMBER(insn));
++	  if (in_section->common.flags & SECTION_CODE)
++	    cfi_3tag_internal_label(file, "L", CODE_LABEL_NUMBER(insn));
  #else
  	  targetm.asm_out.internal_label (file, "L", CODE_LABEL_NUMBER (insn));
  #endif
@@ -498,7 +536,7 @@
        break;
  
      default:
-@@ -2979,11 +3247,20 @@
+@@ -2979,11 +3285,20 @@
  
  	NOTICE_UPDATE_CC (body, insn);
  #endif
