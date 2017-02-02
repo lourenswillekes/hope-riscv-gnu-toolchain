@@ -52,6 +52,8 @@
 #define ELF_MAXPAGESIZE			0x1000
 #define ELF_COMMONPAGESIZE		0x1000
 
+static int no_alignment_relaxation = 0;
+
 /* The RISC-V linker needs to keep track of the number of relocs that it
    decides to copy as dynamic relocs in check_relocs for each symbol.
    This is so that it can later discard them if they are found to be
@@ -2840,6 +2842,9 @@ _bfd_riscv_relax_align (bfd *abfd, asection *sec,
   if (nop_bytes == rel->r_addend)
     return TRUE;
 
+  if (no_alignment_relaxation)
+    return TRUE;
+
   /* Write as many RISC-V NOPs as we need.  */
   for (pos = 0; pos < (nop_bytes & -4); pos += 4)
     bfd_put_32 (abfd, RISCV_NOP, contents + rel->r_offset + pos);
@@ -2896,18 +2901,19 @@ _bfd_riscv_relax_section (bfd *abfd, asection *sec,
       if (info->relax_pass == 0)
 	{
 	  if (type == R_RISCV_CALL || type == R_RISCV_CALL_PLT)
-//	    relax_func = _bfd_riscv_relax_call;
-	    relax_func = NULL;
+	    relax_func = _bfd_riscv_relax_call;
+//	    relax_func = NULL;
 	  else if (type == R_RISCV_HI20
 		   || type == R_RISCV_LO12_I
 		   || type == R_RISCV_LO12_S)
-//	    relax_func = _bfd_riscv_relax_lui;
-	    relax_func = NULL;
+	    relax_func = _bfd_riscv_relax_lui;
+//	    relax_func = NULL;
 	  else if (type == R_RISCV_TPREL_HI20 || type == R_RISCV_TPREL_ADD)
 	    relax_func = _bfd_riscv_relax_tls_le;
 	}
       else if (type == R_RISCV_ALIGN)
 	relax_func = _bfd_riscv_relax_align;
+//	    relax_func = NULL;
 
       if (!relax_func)
 	continue;

@@ -206,7 +206,7 @@
 +  }
 +  
 +  void render_fn_relative_offset(dover_meta_data_label_t const *label) {
-+#if 0
++#if 1
 +#ifdef HAVE_AS_LEB128
 +    fprintf(fp, "\t.uleb128 ");
 +#else
@@ -409,13 +409,13 @@
 +  gcc_assert(!dmd_prologue_authority);
 +  // make sure that the epilogue gets closed out
 +  stack_policy_note_non_epilogue_inst(asm_out_file);
-+//  dover_meta_data_label_t *l = NULL;
-+//  if (!DECL_WEAK (current_function_decl)) {
-+//    l = new dover_meta_data_label_t(".Ldmd_end_function_");
-+//    l->render_as_target(stream);
-+//  }
-+  dover_meta_data_label_t *l = new dover_meta_data_label_t(".Ldmd_end_function_");
-+  l->render_as_target(stream);
++  dover_meta_data_label_t *l = NULL;
++  if (!DECL_WEAK (current_function_decl)) {
++    l = new dover_meta_data_label_t(".Ldmd_end_function_");
++    l->render_as_target(stream);
++  }
++//  dover_meta_data_label_t *l = new dover_meta_data_label_t(".Ldmd_end_function_");
++//  l->render_as_target(stream);
 +  
 +  switch_to_section (text_meta_data_section);
 +  
