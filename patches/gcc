@@ -584,7 +584,7 @@
  #endif
  
 +  text_meta_data_section = get_unnamed_section (0, output_section_asm_op,
-+					       "\t.section\t.dover_metadata, \"a\"");
++					       "\t.section\t.dover_metadata,\"\",@progbits");
 +
    targetm.asm_out.init_sections ();
  
