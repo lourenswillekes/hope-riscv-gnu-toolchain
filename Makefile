@@ -1,0 +1,19 @@
+.PHONY: all
+.PHONY: install
+.PHONY: clean
+
+ISP_PREFIX ?= /opt/isp/
+
+all: build/Makefile
+	$(MAKE) -C build
+
+build/Makefile:
+	$(MAKE) clean
+	mkdir build
+	cd build; ../configure --prefix=$(ISP_PREFIX) --with-arch=rv32g --with-abi=ilp32
+
+install:
+	$(MAKE) -C build install
+
+clean:
+	$(RM) -r build
