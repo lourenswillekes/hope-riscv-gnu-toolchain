@@ -8,7 +8,7 @@ all: build/Makefile
 	$(MAKE) -C build
 
 build/Makefile:
-	$(MAKE) clean
+	$(MAKE) -f Makefile.isp clean
 	mkdir build
 	cd build; ../configure --prefix=$(ISP_PREFIX) --with-arch=rv32g --with-abi=ilp32
 
