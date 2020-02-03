@@ -19,7 +19,7 @@ build/Makefile:
 
 build64/Makefile:
 	mkdir build64
-	cd build64; ../configure --prefix=$(ISP_PREFIX) --with-arch=rv64imafd --with-abi=lp64d
+	cd build64; ../configure --prefix=$(ISP_PREFIX) --with-arch=rv64imafd --with-abi=lp64d --with-cmodel=medany
 
 install:
 	$(MAKE) -C build install
