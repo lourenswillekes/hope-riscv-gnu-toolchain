@@ -1,19 +1,21 @@
 .PHONY: all
 .PHONY: install
 .PHONY: clean
+.PHONY: rv32
 
 ISP_PREFIX ?= $(HOME)/.local/isp/
 
-all: build/Makefile
-	$(MAKE) -C build
+all: rv32
 
-build/Makefile:
-	$(MAKE) -f Makefile.isp clean
-	mkdir build
-	cd build; ../configure --prefix=$(ISP_PREFIX) --with-arch=rv32ima --with-abi=ilp32
+rv32: build32/Makefile
+	$(MAKE) -C build32
+
+build32/Makefile:
+	mkdir build32
+	cd build32; ../configure --prefix=$(ISP_PREFIX) --with-arch=rv32ima --with-abi=ilp32
 
 install:
-	$(MAKE) -C build install
+	$(MAKE) -C build32 install
 
 clean:
-	$(RM) -r build
+	$(RM) -r build32
