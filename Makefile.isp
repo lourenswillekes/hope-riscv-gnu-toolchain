@@ -14,7 +14,7 @@ MULTILIBS_GEN := \
 all: multilib
 
 rv32: BUILD_DIR ?= build32
-rv32: CONFIG_FLAGS = --prefix=$(ISP_PREFIX) --with-arch=rv32ima --with-abi=ilp32 --with-cmodel=medium
+rv32: CONFIG_FLAGS = --prefix=$(ISP_PREFIX) --with-arch=rv32ima --with-abi=ilp32 --with-cmodel=medlow
 
 rv64: BUILD_DIR ?= build64
 rv64: CONFIG_FLAGS = --prefix=$(ISP_PREFIX) --with-arch=rv64imafd --with-abi=lp64d --with-cmodel=medany
