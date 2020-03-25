@@ -9,7 +9,8 @@ ISP_PREFIX ?= $(HOME)/.local/isp/
 
 MULTILIBS_GEN := \
     rv32ima-ilp32-- \
-    rv64imafd-lp64d--
+    rv64imafd-lp64d-- \
+    rv64imac-lp64--
 
 all: multilib
 
