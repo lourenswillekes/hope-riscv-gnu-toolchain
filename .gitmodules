@@ -10,3 +10,6 @@
 [submodule "riscv-gdb"]
 	path = riscv-gdb
 	url = ../hope-riscv-binutils-gdb.git
+[submodule "riscv-glibc"]
+	path = riscv-glibc
+	url = https://github.com/riscv/riscv-glibc

@@ -5,13 +5,16 @@
 
 ISP_PREFIX ?= $(HOME)/.local/isp/
 
-all: rv32 rv64
+all: rv32 rv64 rv64linux
 
 rv32: build/Makefile
 	$(MAKE) -C build
 
 rv64: build64/Makefile
 	$(MAKE) -C build64
+
+rv64linux: build64/Makefile
+	$(MAKE) linux -C build64
 
 build/Makefile:
 	mkdir build
